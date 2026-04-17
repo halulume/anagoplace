@@ -13,7 +13,7 @@ export interface RarityConfig {
 export const RARITY_CONFIG: Record<Rarity, RarityConfig> = {
   Basic: {
     label: "Basic",
-    badgeGradient: "",
+    badgeGradient: "from-gray-500 to-gray-400",
     cssClass: "",
     borderColor: "transparent",
   },

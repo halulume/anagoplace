@@ -219,14 +219,12 @@ export default function NFTDetailPage() {
               className="object-cover"
             />
           )}
-          {/* Rarity badge overlay (non-Basic) */}
-          {!isBasic && (
-            <div
-              className={`absolute top-3 right-3 bg-gradient-to-r ${rarityConfig.badgeGradient} text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-wider`}
-            >
-              {rarityConfig.label}
-            </div>
-          )}
+          {/* Rarity badge overlay */}
+          <div
+            className={`absolute top-3 right-3 bg-gradient-to-r ${rarityConfig.badgeGradient} text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-wider`}
+          >
+            {rarityConfig.label}
+          </div>
         </div>
 
         {/* Info */}

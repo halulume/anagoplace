@@ -270,7 +270,7 @@ main {
 /* Legendary — idle: soft gold pulse. Hover: rotating gold light sweep. */
 .rarity-legendary {
   border-color: #F59E0B !important;
-  animation: rarity-legendary-idle 2.4s ease-in-out infinite;
+  animation: rarity-legendary-idle 4s ease-in-out infinite;
 }
 
 /* Mystic — idle: soft red pulse. Hover: animated flame border. */
@@ -354,7 +354,7 @@ main {
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: rarity-rotate-sweep 2.2s linear infinite;
+  animation: rarity-rotate-sweep 3.8s linear infinite;
   pointer-events: none;
   z-index: 5;
 }

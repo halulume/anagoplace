@@ -85,14 +85,12 @@ export default function NFTCard({
             </div>
           )}
 
-          {/* Rarity badge — top-right (hidden for Basic) */}
-          {!isBasic && (
-            <div
-              className={`absolute top-2.5 right-2.5 bg-gradient-to-r ${rarityConfig.badgeGradient} text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-lg uppercase tracking-wide`}
-            >
-              {rarityConfig.label}
-            </div>
-          )}
+          {/* Rarity badge — top-right (always shown, neutral style for Basic) */}
+          <div
+            className={`absolute top-2.5 right-2.5 bg-gradient-to-r ${rarityConfig.badgeGradient} text-white text-[9px] font-bold px-2 py-0.5 rounded-full shadow-lg uppercase tracking-wide`}
+          >
+            {rarityConfig.label}
+          </div>
 
           {/* Quick-view arrow */}
           <div className="absolute bottom-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-all duration-200 translate-y-1 group-hover:translate-y-0">

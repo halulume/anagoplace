@@ -83,7 +83,7 @@ const MOCK_TRENDING = [
 
 // Badge gradient per rarity tier (matches lib/rarity.ts)
 const RARITY_BADGE: Record<string, string> = {
-  Basic: "",
+  Basic: "from-gray-500 to-gray-400",
   Rare: "from-blue-500 to-cyan-400",
   Epic: "from-purple-500 to-violet-500",
   Legendary: "from-orange-400 to-amber-500",
@@ -324,14 +324,12 @@ export default function HomePage() {
                   fill
                   className="object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-                {/* Rarity badge (hidden for Basic) */}
-                {nft.rarity !== "Basic" && (
-                  <div
-                    className={`absolute top-2 right-2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${RARITY_BADGE[nft.rarity]} text-white shadow-lg uppercase tracking-wide`}
-                  >
-                    {nft.rarity}
-                  </div>
-                )}
+                {/* Rarity badge */}
+                <div
+                  className={`absolute top-2 right-2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${RARITY_BADGE[nft.rarity]} text-white shadow-lg uppercase tracking-wide`}
+                >
+                  {nft.rarity}
+                </div>
                 {/* Quick view overlay */}
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                   <div className="bg-white/10 backdrop-blur-sm rounded-full p-2 border border-white/20">
