@@ -365,7 +365,7 @@ main {
 
 /* Mystic hover — BLAZING fire (rapid rotation + flicker + breathing halo) */
 .rarity-mystic:hover {
-  animation: rarity-mystic-halo-flicker 2.6s ease-in-out infinite;
+  animation: rarity-mystic-halo-flicker 4s ease-in-out infinite;
   border-color: transparent !important;
 }
 
@@ -401,8 +401,8 @@ main {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   animation:
-    rarity-rotate-sweep 2.4s linear infinite,
-    rarity-mystic-blaze 0.9s steps(5) infinite;
+    rarity-rotate-sweep 3.5s linear infinite,
+    rarity-mystic-blaze 1.6s steps(5) infinite;
   filter: brightness(1.15) saturate(1.4);
   pointer-events: none;
   z-index: 5;
