@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Home,
   Compass,
@@ -10,6 +11,7 @@ import {
   ArrowLeftRight,
   User,
   LayoutGrid,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +41,25 @@ export default function Sidebar() {
   const exploreActive = pathname === "/explore" || pathname.startsWith("/explore/");
   const currentRarity = searchParams?.get("rarity") ?? "All";
 
+  // Sub-tab expansion is manual: start collapsed, toggle via compass click.
+  // Persisted in localStorage so the choice survives navigation.
+  const [exploreOpen, setExploreOpen] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("anagoplace:exploreOpen");
+      if (saved === "1") setExploreOpen(true);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem("anagoplace:exploreOpen", exploreOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [exploreOpen]);
+
   return (
     <aside className="fixed left-0 top-0 h-screen w-[64px] flex flex-col items-center bg-[#0a0a0a] border-r border-white/[0.05] z-50 py-4">
       {/* Logo */}
@@ -63,37 +84,70 @@ export default function Sidebar() {
           const active =
             pathname === href ||
             (href !== "/" && pathname.startsWith(href));
+          const isExplore = href === "/explore";
+
+          // Explore gets a button-wrapper that toggles sub-tabs and also
+          // navigates. Everything else is a plain Link.
+          const iconInner = (
+            <>
+              {/* Active indicator bar */}
+              {active && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-monad-400 rounded-r-full shadow-[0_0_8px_rgba(131,110,249,0.8)]" />
+              )}
+              <Icon size={19} strokeWidth={active ? 2.2 : 1.8} />
+              {/* Tooltip */}
+              <span className="absolute left-full ml-3 px-2.5 py-1 bg-[#181818] text-white text-xs rounded-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-150 border border-white/[0.08] shadow-xl z-[60]">
+                {label}
+              </span>
+            </>
+          );
+          const iconClass = cn(
+            "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200",
+            active
+              ? "bg-monad-500/15 text-monad-400"
+              : "text-gray-600 hover:text-gray-200 hover:bg-white/[0.06]"
+          );
+
           return (
             <div key={href} className="flex flex-col items-center w-full">
-              <Link
-                href={href}
-                title={label}
-                className={cn(
-                  "group relative flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200",
-                  active
-                    ? "bg-monad-500/15 text-monad-400"
-                    : "text-gray-600 hover:text-gray-200 hover:bg-white/[0.06]"
-                )}
-              >
-                {/* Active indicator bar */}
-                {active && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-monad-400 rounded-r-full shadow-[0_0_8px_rgba(131,110,249,0.8)]" />
-                )}
-                <Icon
-                  size={19}
-                  strokeWidth={active ? 2.2 : 1.8}
-                />
-                {/* Tooltip */}
-                <span className="absolute left-full ml-3 px-2.5 py-1 bg-[#181818] text-white text-xs rounded-lg whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-all duration-150 border border-white/[0.08] shadow-xl z-[60]">
-                  {label}
-                </span>
-              </Link>
+              {isExplore ? (
+                // Explore: Link that also toggles sub-tabs on click.
+                // If already on /explore, click = pure toggle (preventDefault
+                // the navigation to avoid a pointless same-page reload).
+                <Link
+                  href={href}
+                  title={label}
+                  className={iconClass}
+                  onClick={(e) => {
+                    if (exploreActive) {
+                      e.preventDefault();
+                      setExploreOpen((v) => !v);
+                    } else {
+                      setExploreOpen(true);
+                    }
+                  }}
+                >
+                  {iconInner}
+                  {/* Tiny chevron cue — rotates when open */}
+                  <ChevronDown
+                    size={9}
+                    className={cn(
+                      "absolute -bottom-0.5 right-0.5 text-gray-600 transition-transform duration-200",
+                      exploreOpen && "rotate-180 text-monad-400"
+                    )}
+                  />
+                </Link>
+              ) : (
+                <Link href={href} title={label} className={iconClass}>
+                  {iconInner}
+                </Link>
+              )}
 
-              {/* Explore sub-items — show only when Explore is active */}
-              {href === "/explore" && exploreActive && (
-                <div className="flex flex-col items-center gap-1 mt-1 mb-1 py-1 border-l border-white/[0.05]">
+              {/* Explore sub-items — only when user explicitly opened */}
+              {isExplore && exploreOpen && (
+                <div className="flex flex-col items-center gap-1 mt-1 mb-1 py-1 border-l border-white/[0.05] animate-[fade-in_140ms_ease-out]">
                   {EXPLORE_SUBS.map((s) => {
-                    const selected = currentRarity === s.key;
+                    const selected = exploreActive && currentRarity === s.key;
                     const subHref =
                       s.key === "All" ? "/explore" : `/explore?rarity=${s.key}`;
                     return (
