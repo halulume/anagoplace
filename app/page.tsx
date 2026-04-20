@@ -71,17 +71,6 @@ function timeAgo(tsSec: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-// Derive rarity tier from price rank within list
-function deriveRarity(idx: number, total: number): "Mystic" | "Legendary" | "Epic" | "Rare" | "Basic" {
-  if (total <= 0) return "Basic";
-  const pct = (idx + 1) / total;
-  if (pct <= 0.1) return "Mystic";
-  if (pct <= 0.25) return "Legendary";
-  if (pct <= 0.5) return "Epic";
-  if (pct <= 0.75) return "Rare";
-  return "Basic";
-}
-
 function fmtShort(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—";
   if (n === 0) return "0";
@@ -90,24 +79,6 @@ function fmtShort(n: number | null | undefined): string {
   if (n < 1_000_000) return (n / 1000).toFixed(1) + "K";
   return (n / 1_000_000).toFixed(1) + "M";
 }
-
-// Badge gradient per rarity tier (matches lib/rarity.ts)
-const RARITY_BADGE: Record<string, string> = {
-  Basic: "from-gray-500 to-gray-400",
-  Rare: "from-blue-500 to-cyan-400",
-  Epic: "from-purple-500 to-violet-500",
-  Legendary: "from-orange-400 to-amber-500",
-  Mystic: "from-red-500 to-rose-500",
-};
-
-// Card CSS class per rarity tier (matches globals.css .rarity-* rules)
-const RARITY_CLASS: Record<string, string> = {
-  Basic: "border-white/[0.05]",
-  Rare: "rarity-rare border",
-  Epic: "rarity-epic border",
-  Legendary: "rarity-legendary border",
-  Mystic: "rarity-mystic border",
-};
 
 export default function HomePage() {
   const { price: monUsdPrice } = useMonPrice();
@@ -567,7 +538,6 @@ export default function HomePage() {
                 </div>
               ))
             : liveTrending.map((nft, i) => {
-                const rarity = deriveRarity(i, liveTrending.length);
                 const priceAnago =
                   anagoPerMon && nft.priceMon ? nft.priceMon * anagoPerMon : null;
                 return (
@@ -576,7 +546,7 @@ export default function HomePage() {
                     href={nft.openseaUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className={`group relative bg-[#111111] rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${RARITY_CLASS[rarity]}`}
+                    className="group relative bg-[#111111] border border-white/[0.05] rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:border-monad-500/20"
                   >
                     {/* Image */}
                     <div className="relative aspect-square bg-[#1a1a1a] overflow-hidden">
@@ -589,12 +559,20 @@ export default function HomePage() {
                           (e.currentTarget as HTMLImageElement).src = "/anago-hero.png";
                         }}
                       />
-                      {/* Rarity badge */}
-                      <div
-                        className={`absolute top-2 right-2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${RARITY_BADGE[rarity]} text-white shadow-lg uppercase tracking-wide`}
-                      >
-                        {rarity}
-                      </div>
+                      {/* Rank badge (top 3 only) */}
+                      {i < 3 && (
+                        <div
+                          className={`absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r ${
+                            i === 0
+                              ? "from-amber-400 to-yellow-500"
+                              : i === 1
+                                ? "from-slate-300 to-slate-400"
+                                : "from-orange-400 to-red-500"
+                          } text-black shadow-lg uppercase tracking-wide`}
+                        >
+                          #{i + 1}
+                        </div>
+                      )}
                       {/* Quick view overlay */}
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                         <div className="bg-white/10 backdrop-blur-sm rounded-full p-2 border border-white/20">
