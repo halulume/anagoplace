@@ -3,7 +3,11 @@ import "./globals.css";
 import WalletProvider from "@/components/WalletProvider";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
+import CacheBuster from "@/components/CacheBuster";
 import { Toaster } from "react-hot-toast";
+
+// Build-time timestamp — changes with every deploy, drives client-side cache purge
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA ?? String(Date.now());
 
 export const metadata: Metadata = {
   title: "AnagoPlace — Monad NFT Marketplace",
@@ -24,6 +28,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-[#0a0a0a] min-h-screen">
+        <CacheBuster buildId={BUILD_ID} />
         <WalletProvider>
           {/* Sidebar (left, fixed) */}
           <Sidebar />

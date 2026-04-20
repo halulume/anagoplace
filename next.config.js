@@ -120,6 +120,19 @@ const nextConfig = {
           { key: "Cache-Control", value: "no-store, no-cache, must-revalidate" },
         ],
       },
+      {
+        // HTML pages: disable any browser/disk caching so deploys are instant
+        // for returning visitors. _next/static/* and /api/* are matched above.
+        source: "/:path((?!_next/|api/).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-store, no-cache, must-revalidate, max-age=0",
+          },
+          { key: "Pragma", value: "no-cache" },
+          { key: "Expires", value: "0" },
+        ],
+      },
     ];
   },
 };
