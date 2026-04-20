@@ -2,11 +2,47 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, ArrowUpRight, Zap, Shield, Globe, TrendingUp } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Zap,
+  Shield,
+  Globe,
+  TrendingUp,
+  Flame,
+  Crown,
+  Trophy,
+  Activity,
+} from "lucide-react";
 import { useReadContract } from "wagmi";
 import { FACTORY_ADDRESS, FACTORY_ABI, MARKETPLACE_ADDRESS, MARKETPLACE_ABI } from "@/lib/contracts";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMonPrice, formatUsd } from "@/lib/price";
+
+/* ── Types for OpenSea + rate fetches ──────────────────────────────────── */
+type OsCollection = {
+  slug: string;
+  name: string;
+  image: string | null;
+  banner: string | null;
+  description: string | null;
+  floorMon: number | null;
+  oneDayVolumeMon: number | null;
+  totalSupply: number | null;
+  owners: number | null;
+  openseaUrl: string;
+};
+type OsResponse = { collections: OsCollection[]; error?: string };
+type RateResponse = { anagoPerMon: number; error?: string };
+
+function fmtShort(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return "—";
+  if (n === 0) return "0";
+  if (n < 1) return n.toLocaleString("en-US", { maximumFractionDigits: 3 });
+  if (n < 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  if (n < 1_000_000) return (n / 1000).toFixed(1) + "K";
+  return (n / 1_000_000).toFixed(1) + "M";
+}
 
 // Mock activity data (replace with on-chain events)
 const MOCK_ACTIVITIES = [
@@ -114,17 +150,79 @@ export default function HomePage() {
     functionName: "listingCount",
   });
 
+  /* ── Live top-3 hero from OpenSea (sorted by floor price desc) ─────── */
   const [heroIndex, setHeroIndex] = useState(0);
-  const heroItems = [
-    { title: "Anago OGs", sub: "The original Anago dog collection on Monad", badge: "FEATURED" },
-    { title: "Monad Punks", sub: "Pixel-art punks minted on Monad testnet", badge: "TRENDING" },
-    { title: "Genesis Pass", sub: "Exclusive genesis NFTs for early adopters", badge: "LIMITED" },
-  ];
+  const [topCollections, setTopCollections] = useState<OsCollection[]>([]);
+  const [anagoPerMon, setAnagoPerMon] = useState<number | null>(null);
+  const [heroLoading, setHeroLoading] = useState(true);
 
   useEffect(() => {
-    const t = setInterval(() => setHeroIndex((i) => (i + 1) % heroItems.length), 5000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    (async () => {
+      try {
+        const [colRes, rateRes] = await Promise.all([
+          fetch(`/api/opensea/collections?order_by=market_cap&limit=50`, { cache: "no-store" }),
+          fetch(`/api/rate/mon-anago`, { cache: "no-store" }),
+        ]);
+        const colJson: OsResponse = await colRes.json().catch(() => ({ collections: [] }));
+        const rateJson: RateResponse = await rateRes.json().catch(() => ({ anagoPerMon: 0 }));
+        if (cancelled) return;
+
+        // Pick top 3 by floor price (desc), skipping nulls
+        const top = (colJson.collections ?? [])
+          .filter((c) => typeof c.floorMon === "number" && c.floorMon! > 0)
+          .sort((a, b) => (b.floorMon ?? 0) - (a.floorMon ?? 0))
+          .slice(0, 3);
+        setTopCollections(top);
+        if (typeof rateJson.anagoPerMon === "number" && rateJson.anagoPerMon > 0) {
+          setAnagoPerMon(rateJson.anagoPerMon);
+        }
+      } catch {
+        /* ignore — fallback renders below */
+      } finally {
+        if (!cancelled) setHeroLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // Auto-refresh rate every 45s
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetch(`/api/rate/mon-anago`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((json: RateResponse) => {
+          if (typeof json.anagoPerMon === "number" && json.anagoPerMon > 0)
+            setAnagoPerMon(json.anagoPerMon);
+        })
+        .catch(() => {});
+    }, 45_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Cycle the hero every 5s
+  useEffect(() => {
+    if (topCollections.length < 2) return;
+    const t = setInterval(
+      () => setHeroIndex((i) => (i + 1) % topCollections.length),
+      5000
+    );
+    return () => clearInterval(t);
+  }, [topCollections.length]);
+
+  const currentHero = useMemo<OsCollection | null>(
+    () => (topCollections.length > 0 ? topCollections[heroIndex] ?? topCollections[0] : null),
+    [topCollections, heroIndex]
+  );
+
+  const heroRank = heroIndex + 1;
+  const rankMeta = [
+    { label: "#1 TOP FLOOR", icon: Crown, color: "from-amber-400 to-yellow-500", shadow: "rgba(251,191,36,0.45)" },
+    { label: "#2 ELITE", icon: Trophy, color: "from-slate-300 to-slate-400", shadow: "rgba(148,163,184,0.4)" },
+    { label: "#3 RISING", icon: Flame, color: "from-orange-400 to-red-500", shadow: "rgba(251,113,36,0.4)" },
+  ][heroIndex] ?? { label: "FEATURED", icon: Crown, color: "from-monad-400 to-monad-600", shadow: "rgba(131,110,249,0.4)" };
 
   const stats = [
     { label: "Collections", value: totalCollections ? totalCollections.toString() : "0" },
@@ -144,81 +242,195 @@ export default function HomePage() {
         </Link>
       </div>
 
-      {/* ── Hero / Carousel ── */}
+      {/* ── Hero / Live Top-3 Carousel ── */}
       <section className="relative overflow-hidden">
-        {/* Background image with overlay */}
-        <div className="relative h-[420px] sm:h-[480px]">
+        <div className="relative h-[460px] sm:h-[520px]">
           {/* Animated gradient bg */}
           <div className="absolute inset-0 bg-gradient-to-br from-[#0d0020] via-[#0a0a0a] to-[#000d1a]" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_60%_40%,rgba(131,110,249,0.15)_0%,transparent_70%)]" />
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_40%_at_10%_80%,rgba(0,212,255,0.08)_0%,transparent_60%)]" />
 
+          {/* Collection banner as blurred background */}
+          {currentHero?.banner && (
+            <div
+              key={currentHero.slug + "-bg"}
+              className="absolute inset-0 opacity-20 animate-[fade-in_700ms_ease-out] transition-opacity duration-700"
+              style={{
+                backgroundImage: `url(${currentHero.banner})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+                filter: "blur(40px)",
+              }}
+            />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a0a]/70 via-transparent to-[#0a0a0a]/80" />
+
           {/* Content */}
           <div className="relative h-full max-w-7xl mx-auto px-6 flex items-center gap-8">
-            {/* Left: text */}
+            {/* Left: text + CTAs */}
             <div className="flex-1 max-w-xl">
-              <span className="inline-flex items-center gap-2 bg-monad-500/10 border border-monad-500/20 rounded-full px-3 py-1 text-[11px] font-semibold text-monad-300 mb-5 uppercase tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-monad-400 animate-pulse" />
-                {heroItems[heroIndex].badge}
+              {/* Rank badge */}
+              <span
+                className={`inline-flex items-center gap-2 bg-gradient-to-r ${rankMeta.color} rounded-full px-3 py-1 text-[11px] font-black text-black mb-5 uppercase tracking-wider shadow-lg`}
+                style={{ boxShadow: `0 0 24px ${rankMeta.shadow}` }}
+              >
+                <rankMeta.icon size={12} strokeWidth={2.5} />
+                {rankMeta.label}
               </span>
 
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-3 tracking-tight">
-                {heroItems[heroIndex].title}
+              {/* Live rate ticker */}
+              <div className="flex items-center gap-2 text-[10px] text-gray-500 mb-3">
+                <Activity
+                  size={10}
+                  className={anagoPerMon ? "text-green-400 animate-pulse" : "text-gray-700"}
+                />
+                {anagoPerMon ? (
+                  <>
+                    <span className="text-gray-600">LIVE</span>
+                    <span className="text-gray-500">·</span>
+                    <span className="text-white font-semibold">1 MON = {fmtShort(anagoPerMon)} ANAGO</span>
+                  </>
+                ) : (
+                  <span className="text-gray-700">Rate loading…</span>
+                )}
+              </div>
+
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-white leading-tight mb-2 tracking-tight truncate">
+                {currentHero?.name ??
+                  (heroLoading ? "Loading…" : "AnagoPlace")}
               </h1>
-              <p className="text-gray-400 text-base sm:text-lg mb-8 leading-relaxed">
-                {heroItems[heroIndex].sub}
+              <p className="text-gray-400 text-sm sm:text-base mb-6 leading-relaxed line-clamp-2">
+                {currentHero?.description?.trim() ||
+                  "Discover the top Monad NFT collections — trade on AnagoPlace in ANAGO."}
               </p>
+
+              {/* Price row */}
+              {currentHero && (
+                <div className="flex items-center gap-4 mb-6 flex-wrap">
+                  <div className="bg-black/40 backdrop-blur border border-white/[0.08] rounded-xl px-4 py-2.5">
+                    <div className="text-[9px] text-gray-600 uppercase tracking-wider font-semibold">
+                      Floor
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-white text-xl font-black">
+                        {anagoPerMon && currentHero.floorMon
+                          ? fmtShort(currentHero.floorMon * anagoPerMon)
+                          : "—"}
+                      </span>
+                      <span className="text-[10px] text-monad-400 font-semibold">ANAGO</span>
+                    </div>
+                    <div className="text-[10px] text-gray-600 mt-0.5">
+                      {fmtShort(currentHero.floorMon)} MON
+                    </div>
+                  </div>
+                  {typeof currentHero.oneDayVolumeMon === "number" && (
+                    <div className="bg-black/40 backdrop-blur border border-white/[0.08] rounded-xl px-4 py-2.5">
+                      <div className="text-[9px] text-gray-600 uppercase tracking-wider font-semibold">
+                        24h Vol
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-white text-xl font-black">
+                          {fmtShort(currentHero.oneDayVolumeMon)}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-semibold">MON</span>
+                      </div>
+                      {typeof currentHero.owners === "number" && (
+                        <div className="text-[10px] text-gray-600 mt-0.5">
+                          {fmtShort(currentHero.owners)} owners
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-3 flex-wrap">
                 <Link
-                  href="/explore"
+                  href="/collections"
                   className="flex items-center gap-2 bg-monad-500 hover:bg-monad-400 text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 text-sm shadow-[0_0_20px_rgba(131,110,249,0.3)] hover:shadow-[0_0_30px_rgba(131,110,249,0.5)] hover:scale-[1.02]"
                 >
-                  Explore
+                  Explore Top Collections
                   <ArrowRight size={15} />
                 </Link>
-                <Link
-                  href="/create"
-                  className="flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 text-sm hover:scale-[1.02]"
-                >
-                  Create NFT
-                </Link>
+                {currentHero && (
+                  <a
+                    href={currentHero.openseaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-white font-semibold px-6 py-3 rounded-xl transition-all duration-200 text-sm hover:scale-[1.02]"
+                  >
+                    View Collection
+                    <ArrowUpRight size={15} />
+                  </a>
+                )}
               </div>
 
               {/* Carousel dots */}
               <div className="flex items-center gap-2 mt-8">
-                {heroItems.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setHeroIndex(i)}
-                    className={`transition-all duration-300 rounded-full ${
-                      i === heroIndex
-                        ? "w-6 h-1.5 bg-monad-400"
-                        : "w-1.5 h-1.5 bg-white/20 hover:bg-white/40"
-                    }`}
-                  />
-                ))}
+                {topCollections.length > 0
+                  ? topCollections.map((_, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setHeroIndex(i)}
+                        className={`transition-all duration-300 rounded-full ${
+                          i === heroIndex
+                            ? "w-6 h-1.5 bg-monad-400"
+                            : "w-1.5 h-1.5 bg-white/20 hover:bg-white/40"
+                        }`}
+                      />
+                    ))
+                  : [0, 1, 2].map((i) => (
+                      <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/10" />
+                    ))}
               </div>
             </div>
 
-            {/* Right: Anago mascot */}
+            {/* Right: Collection artwork */}
             <div className="hidden lg:flex flex-shrink-0 items-center justify-center">
-              <div className="relative w-72 h-72">
-                <div className="absolute inset-0 bg-monad-500/10 rounded-full blur-[60px] animate-pulse" />
-                <div className="absolute inset-[-8%] border border-monad-500/10 rounded-full animate-spin-slow" />
-                <div className="absolute inset-[8%] border border-cyan-500/5 rounded-full animate-spin-slow" style={{ animationDirection: "reverse" }} />
-                <Image
-                  src="/anago-hero.png"
-                  alt="Anago Mascot"
-                  fill
-                  className="object-contain animate-float drop-shadow-[0_0_40px_rgba(131,110,249,0.25)]"
-                  priority
+              <div className="relative w-80 h-80">
+                <div className="absolute inset-0 bg-monad-500/10 rounded-3xl blur-[60px] animate-pulse" />
+                <div className="absolute inset-[-8%] border border-monad-500/10 rounded-3xl animate-spin-slow" />
+                <div
+                  className="absolute inset-[8%] border border-cyan-500/5 rounded-3xl animate-spin-slow"
+                  style={{ animationDirection: "reverse" }}
                 />
-                {/* Price badge */}
-                <div className="absolute bottom-4 right-0 translate-x-4 bg-gradient-to-r from-monad-500 to-accent-pink text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg">
-                  <div className="text-[10px] opacity-80 mb-0.5">TOP PRICE</div>
-                  <div className="text-base font-black">5,500 ANAGO</div>
-                </div>
+                {currentHero?.image ? (
+                  <div
+                    key={currentHero.slug + "-art"}
+                    className="relative w-full h-full rounded-3xl overflow-hidden border border-white/10 shadow-[0_20px_80px_rgba(131,110,249,0.25)] animate-[fade-in_600ms_ease-out]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={currentHero.image}
+                      alt={currentHero.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = "/anago-hero.png";
+                      }}
+                    />
+                    {/* Rank overlay */}
+                    <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md border border-white/15 rounded-xl px-2.5 py-1 text-xs font-black text-white">
+                      #{heroRank}
+                    </div>
+                    {/* Price badge */}
+                    <div className="absolute bottom-3 right-3 bg-gradient-to-r from-monad-500 to-accent-pink text-white text-xs font-bold px-3 py-2 rounded-xl shadow-lg">
+                      <div className="text-[10px] opacity-80 mb-0.5">TOP FLOOR</div>
+                      <div className="text-base font-black">
+                        {anagoPerMon && currentHero.floorMon
+                          ? `${fmtShort(currentHero.floorMon * anagoPerMon)} ANAGO`
+                          : `${fmtShort(currentHero.floorMon)} MON`}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <Image
+                    src="/anago-hero.png"
+                    alt="Anago"
+                    fill
+                    className="object-contain animate-float drop-shadow-[0_0_40px_rgba(131,110,249,0.25)]"
+                    priority
+                  />
+                )}
               </div>
             </div>
           </div>
