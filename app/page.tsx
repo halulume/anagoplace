@@ -35,6 +35,53 @@ type OsCollection = {
 type OsResponse = { collections: OsCollection[]; error?: string };
 type RateResponse = { anagoPerMon: number; error?: string };
 
+type LiveActivity = {
+  kind: "sale";
+  txHash: string;
+  timestamp: number;
+  priceMon: number | null;
+  paymentSymbol: string;
+  buyer: string | null;
+  seller: string | null;
+  tokenId: string;
+  tokenName: string;
+  image: string | null;
+  collection: string;
+  collectionName: string;
+  openseaUrl: string;
+};
+
+type LiveTrending = {
+  tokenId: string;
+  tokenName: string;
+  image: string | null;
+  collection: string;
+  collectionName: string;
+  priceMon: number | null;
+  paymentSymbol: string;
+  openseaUrl: string;
+};
+
+function timeAgo(tsSec: number): string {
+  if (!tsSec) return "—";
+  const diff = Math.max(0, Date.now() / 1000 - tsSec);
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// Derive rarity tier from price rank within list
+function deriveRarity(idx: number, total: number): "Mystic" | "Legendary" | "Epic" | "Rare" | "Basic" {
+  if (total <= 0) return "Basic";
+  const pct = (idx + 1) / total;
+  if (pct <= 0.1) return "Mystic";
+  if (pct <= 0.25) return "Legendary";
+  if (pct <= 0.5) return "Epic";
+  if (pct <= 0.75) return "Rare";
+  return "Basic";
+}
+
 function fmtShort(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—";
   if (n === 0) return "0";
@@ -43,79 +90,6 @@ function fmtShort(n: number | null | undefined): string {
   if (n < 1_000_000) return (n / 1000).toFixed(1) + "K";
   return (n / 1_000_000).toFixed(1) + "M";
 }
-
-// Mock activity data (replace with on-chain events)
-const MOCK_ACTIVITIES = [
-  {
-    id: 1,
-    type: "SALE",
-    name: "Anago #042",
-    collection: "Anago OGs",
-    price: "1,200",
-    token: "ANAGO",
-    change: "+18.4%",
-    positive: true,
-    image: "/anago-hero.png",
-    time: "2 min ago",
-  },
-  {
-    id: 2,
-    type: "LIST",
-    name: "Monad Punk #7",
-    collection: "Monad Punks",
-    price: "850",
-    token: "ANAGO",
-    change: "+5.2%",
-    positive: true,
-    image: "/anago-hero.png",
-    time: "8 min ago",
-  },
-  {
-    id: 3,
-    type: "SALE",
-    name: "Anago #118",
-    collection: "Anago OGs",
-    price: "2,400",
-    token: "ANAGO",
-    change: "+42.6%",
-    positive: true,
-    image: "/anago-hero.png",
-    time: "15 min ago",
-  },
-  {
-    id: 4,
-    type: "SALE",
-    name: "Monad Genesis #3",
-    collection: "Genesis",
-    price: "620",
-    token: "ANAGO",
-    change: "-3.1%",
-    positive: false,
-    image: "/anago-hero.png",
-    time: "23 min ago",
-  },
-  {
-    id: 5,
-    type: "LIST",
-    name: "Anago #201",
-    collection: "Anago OGs",
-    price: "980",
-    token: "ANAGO",
-    change: "+11.0%",
-    positive: true,
-    image: "/anago-hero.png",
-    time: "31 min ago",
-  },
-];
-
-// Mock trending NFTs — rarity matches the 5-tier system
-const MOCK_TRENDING = [
-  { id: 1, name: "Anago #001", collection: "Anago OGs", price: "3,200", rarity: "Legendary", image: "/anago-hero.png" },
-  { id: 2, name: "Anago #007", collection: "Anago OGs", price: "1,800", rarity: "Epic", image: "/anago-hero.png" },
-  { id: 3, name: "Monad Punk #1", collection: "Monad Punks", price: "950", rarity: "Rare", image: "/anago-hero.png" },
-  { id: 4, name: "Genesis #0", collection: "Genesis", price: "5,500", rarity: "Mystic", image: "/anago-hero.png" },
-  { id: 5, name: "Anago #042", collection: "Anago OGs", price: "1,200", rarity: "Basic", image: "/anago-hero.png" },
-];
 
 // Badge gradient per rarity tier (matches lib/rarity.ts)
 const RARITY_BADGE: Record<string, string> = {
@@ -155,6 +129,10 @@ export default function HomePage() {
   const [topCollections, setTopCollections] = useState<OsCollection[]>([]);
   const [anagoPerMon, setAnagoPerMon] = useState<number | null>(null);
   const [heroLoading, setHeroLoading] = useState(true);
+
+  // Live feeds
+  const [liveActivities, setLiveActivities] = useState<LiveActivity[]>([]);
+  const [liveTrending, setLiveTrending] = useState<LiveTrending[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -200,6 +178,32 @@ export default function HomePage() {
         .catch(() => {});
     }, 45_000);
     return () => clearInterval(id);
+  }, []);
+
+  // Live feeds: activities (30s) + trending (45s) — combined poll every 30s
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [aRes, tRes] = await Promise.all([
+          fetch("/api/opensea/activities?limit=10", { cache: "no-store" }),
+          fetch("/api/opensea/trending?limit=10", { cache: "no-store" }),
+        ]);
+        const aJson = await aRes.json().catch(() => ({}));
+        const tJson = await tRes.json().catch(() => ({}));
+        if (cancelled) return;
+        if (Array.isArray(aJson.activities)) setLiveActivities(aJson.activities);
+        if (Array.isArray(tJson.nfts)) setLiveTrending(tJson.nfts);
+      } catch {
+        /* ignore */
+      }
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, []);
 
   // Cycle the hero every 5s
@@ -455,7 +459,13 @@ export default function HomePage() {
       {/* ── Latest Activities ── */}
       <section className="max-w-7xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-white">Latest Activities</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-white">Latest Activities</h2>
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live
+            </span>
+          </div>
           <Link
             href="/explore"
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors"
@@ -466,53 +476,74 @@ export default function HomePage() {
 
         {/* Horizontal scroll */}
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-          {MOCK_ACTIVITIES.map((item) => (
-            <Link
-              key={item.id}
-              href="/explore"
-              className="flex-shrink-0 w-[220px] bg-[#111111] border border-white/[0.05] rounded-2xl p-3 hover:border-monad-500/20 hover:bg-[#141414] transition-all duration-200 group"
-            >
-              {/* Thumbnail */}
-              <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-3 bg-[#1a1a1a]">
-                <Image
-                  src={item.image}
-                  alt={item.name}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-300"
-                />
-                {/* Type badge */}
-                <span
-                  className={`absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider ${
-                    item.type === "SALE"
-                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/20"
-                      : "bg-blue-500/20 text-blue-400 border border-blue-500/20"
-                  }`}
+          {liveActivities.length === 0
+            ? [0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="flex-shrink-0 w-[220px] bg-[#111111] border border-white/[0.05] rounded-2xl p-3"
                 >
-                  {item.type}
-                </span>
-              </div>
-              <p className="text-white font-semibold text-sm truncate">{item.name}</p>
-              <p className="text-gray-600 text-[11px] truncate mb-2">{item.collection}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-white text-sm font-bold">{item.price}</span>
-                <span
-                  className={`text-xs font-semibold ${
-                    item.positive ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  {item.change}
-                </span>
-              </div>
-              <p className="text-gray-700 text-[10px] mt-1">{item.time}</p>
-            </Link>
-          ))}
+                  <div className="relative w-full aspect-square rounded-xl bg-white/[0.03] mb-3 animate-pulse" />
+                  <div className="h-3 w-2/3 bg-white/[0.05] rounded mb-2 animate-pulse" />
+                  <div className="h-2 w-1/2 bg-white/[0.03] rounded animate-pulse" />
+                </div>
+              ))
+            : liveActivities.map((item) => {
+                const priceAnago =
+                  anagoPerMon && item.priceMon ? item.priceMon * anagoPerMon : null;
+                return (
+                  <a
+                    key={`${item.txHash}-${item.tokenId}`}
+                    href={item.openseaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-shrink-0 w-[220px] bg-[#111111] border border-white/[0.05] rounded-2xl p-3 hover:border-monad-500/20 hover:bg-[#141414] transition-all duration-200 group"
+                  >
+                    {/* Thumbnail */}
+                    <div className="relative w-full aspect-square rounded-xl overflow-hidden mb-3 bg-[#1a1a1a]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.image || "/anago-hero.png"}
+                        alt={item.tokenName}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = "/anago-hero.png";
+                        }}
+                      />
+                      <span className="absolute top-2 left-2 text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/20">
+                        SALE
+                      </span>
+                    </div>
+                    <p className="text-white font-semibold text-sm truncate">{item.tokenName}</p>
+                    <p className="text-gray-600 text-[11px] truncate mb-2">{item.collectionName}</p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-sm font-bold">
+                        {priceAnago
+                          ? `${fmtShort(priceAnago)}`
+                          : item.priceMon
+                            ? `${fmtShort(item.priceMon)}`
+                            : "—"}
+                      </span>
+                      <span className="text-[9px] text-monad-400 font-semibold uppercase tracking-wide">
+                        {priceAnago ? "ANAGO" : item.paymentSymbol}
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-[10px] mt-1">{timeAgo(item.timestamp)}</p>
+                  </a>
+                );
+              })}
         </div>
       </section>
 
       {/* ── Trending NFTs ── */}
       <section className="max-w-7xl mx-auto px-6 py-4 pb-16">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-white">Trending NFTs</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold text-white">Trending NFTs</h2>
+            <span className="flex items-center gap-1 text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live
+            </span>
+          </div>
           <Link
             href="/explore"
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-white transition-colors"
@@ -522,45 +553,76 @@ export default function HomePage() {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {MOCK_TRENDING.map((nft) => (
-            <Link
-              key={nft.id}
-              href="/explore"
-              className={`group relative bg-[#111111] rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${RARITY_CLASS[nft.rarity]}`}
-            >
-              {/* Image */}
-              <div className="relative aspect-square bg-[#1a1a1a] overflow-hidden">
-                <Image
-                  src={nft.image}
-                  alt={nft.name}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-500"
-                />
-                {/* Rarity badge */}
+          {liveTrending.length === 0
+            ? [0, 1, 2, 3, 4].map((i) => (
                 <div
-                  className={`absolute top-2 right-2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${RARITY_BADGE[nft.rarity]} text-white shadow-lg uppercase tracking-wide`}
+                  key={i}
+                  className="bg-[#111111] border border-white/[0.05] rounded-2xl overflow-hidden"
                 >
-                  {nft.rarity}
-                </div>
-                {/* Quick view overlay */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                  <div className="bg-white/10 backdrop-blur-sm rounded-full p-2 border border-white/20">
-                    <ArrowUpRight size={16} className="text-white" />
+                  <div className="aspect-square bg-white/[0.03] animate-pulse" />
+                  <div className="p-3">
+                    <div className="h-3 w-2/3 bg-white/[0.05] rounded mb-2 animate-pulse" />
+                    <div className="h-2 w-1/2 bg-white/[0.03] rounded animate-pulse" />
                   </div>
                 </div>
-              </div>
+              ))
+            : liveTrending.map((nft, i) => {
+                const rarity = deriveRarity(i, liveTrending.length);
+                const priceAnago =
+                  anagoPerMon && nft.priceMon ? nft.priceMon * anagoPerMon : null;
+                return (
+                  <a
+                    key={`${nft.collection}-${nft.tokenId}`}
+                    href={nft.openseaUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`group relative bg-[#111111] rounded-2xl overflow-hidden transition-all duration-300 hover:scale-[1.02] ${RARITY_CLASS[rarity]}`}
+                  >
+                    {/* Image */}
+                    <div className="relative aspect-square bg-[#1a1a1a] overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={nft.image || "/anago-hero.png"}
+                        alt={nft.tokenName}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).src = "/anago-hero.png";
+                        }}
+                      />
+                      {/* Rarity badge */}
+                      <div
+                        className={`absolute top-2 right-2 text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${RARITY_BADGE[rarity]} text-white shadow-lg uppercase tracking-wide`}
+                      >
+                        {rarity}
+                      </div>
+                      {/* Quick view overlay */}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                        <div className="bg-white/10 backdrop-blur-sm rounded-full p-2 border border-white/20">
+                          <ArrowUpRight size={16} className="text-white" />
+                        </div>
+                      </div>
+                    </div>
 
-              {/* Info */}
-              <div className="p-3">
-                <p className="text-white text-xs font-semibold truncate">{nft.name}</p>
-                <p className="text-gray-600 text-[10px] truncate mb-2">{nft.collection}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-white text-xs font-bold">{nft.price}</span>
-                  <span className="text-[9px] text-gray-700 uppercase tracking-wide">ANAGO</span>
-                </div>
-              </div>
-            </Link>
-          ))}
+                    {/* Info */}
+                    <div className="p-3">
+                      <p className="text-white text-xs font-semibold truncate">{nft.tokenName}</p>
+                      <p className="text-gray-600 text-[10px] truncate mb-2">{nft.collectionName}</p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-white text-xs font-bold">
+                          {priceAnago
+                            ? fmtShort(priceAnago)
+                            : nft.priceMon
+                              ? fmtShort(nft.priceMon)
+                              : "—"}
+                        </span>
+                        <span className="text-[9px] text-monad-400 font-semibold uppercase tracking-wide">
+                          {priceAnago ? "ANAGO" : nft.paymentSymbol}
+                        </span>
+                      </div>
+                    </div>
+                  </a>
+                );
+              })}
         </div>
       </section>
 
