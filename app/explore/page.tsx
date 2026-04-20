@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useReadContract, usePublicClient } from "wagmi";
 import {
   FACTORY_ADDRESS,
@@ -13,7 +13,7 @@ import {
 import { fetchNFTMetadata, ipfsToHttp } from "@/lib/ipfs";
 import NFTCard from "@/components/NFTCard";
 import { getRarity, RARITY_CONFIG, type Rarity } from "@/lib/rarity";
-import { Search, Grid3X3, LayoutList, Loader2 } from "lucide-react";
+import { Search, Grid3X3, LayoutList, Loader2, Filter, ChevronDown, Check } from "lucide-react";
 
 type RarityTab = "All" | Rarity;
 const RARITY_TABS: RarityTab[] = ["All", "Basic", "Rare", "Epic", "Legendary", "Mystic"];
@@ -35,7 +35,28 @@ export default function ExplorePage() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [rarityTab, setRarityTab] = useState<RarityTab>("All");
+  const [rarityOpen, setRarityOpen] = useState(false);
+  const rarityRef = useRef<HTMLDivElement>(null);
   const publicClient = usePublicClient();
+
+  // Close dropdown on outside click / ESC
+  useEffect(() => {
+    if (!rarityOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (rarityRef.current && !rarityRef.current.contains(e.target as Node)) {
+        setRarityOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setRarityOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [rarityOpen]);
 
   // Counts per rarity (for tab badges)
   const rarityCounts: Record<RarityTab, number> = {
@@ -184,33 +205,64 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      {/* Rarity tabs */}
-      <div className="flex gap-2 overflow-x-auto scrollbar-hide mb-6 pb-1">
-        {RARITY_TABS.map((tab) => {
-          const active = rarityTab === tab;
-          const count = rarityCounts[tab];
-          const gradient = tab === "All" ? "from-monad-500 to-accent-pink" : RARITY_CONFIG[tab].badgeGradient;
-          return (
-            <button
-              key={tab}
-              onClick={() => setRarityTab(tab)}
-              className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
-                active
-                  ? `bg-gradient-to-r ${gradient} text-white shadow-lg`
-                  : "bg-[#111111] border border-white/[0.05] text-gray-500 hover:text-white hover:border-white/[0.12]"
-              }`}
-            >
-              <span className="uppercase tracking-wider">{tab}</span>
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
-                  active ? "bg-black/25" : "bg-white/[0.05] text-gray-600"
-                }`}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+      {/* Rarity filter — collapsible dropdown */}
+      <div className="relative mb-6 inline-block" ref={rarityRef}>
+        <button
+          onClick={() => setRarityOpen((v) => !v)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all duration-200 ${
+            rarityTab === "All"
+              ? "bg-[#111111] border border-white/[0.08] text-white hover:border-white/[0.16]"
+              : `bg-gradient-to-r ${RARITY_CONFIG[rarityTab as Rarity].badgeGradient} text-white shadow-lg`
+          }`}
+        >
+          <Filter size={13} />
+          <span className="uppercase tracking-wider">
+            {rarityTab === "All" ? "All Rarities" : rarityTab}
+          </span>
+          <span
+            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+              rarityTab === "All" ? "bg-white/[0.06] text-gray-400" : "bg-black/25"
+            }`}
+          >
+            {rarityCounts[rarityTab]}
+          </span>
+          <ChevronDown
+            size={13}
+            className={`transition-transform duration-200 ${rarityOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {rarityOpen && (
+          <div className="absolute left-0 top-full mt-2 w-56 bg-[#111111] border border-white/[0.08] rounded-xl shadow-2xl overflow-hidden z-30 animate-[fade-in_120ms_ease-out]">
+            {RARITY_TABS.map((tab) => {
+              const active = rarityTab === tab;
+              const count = rarityCounts[tab];
+              const dotColor =
+                tab === "All"
+                  ? "bg-gradient-to-r from-monad-500 to-accent-pink"
+                  : `bg-gradient-to-r ${RARITY_CONFIG[tab].badgeGradient}`;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => {
+                    setRarityTab(tab);
+                    setRarityOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                    active ? "bg-white/[0.06] text-white" : "text-gray-400 hover:bg-white/[0.03] hover:text-white"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${dotColor} shadow-[0_0_6px_rgba(255,255,255,0.15)]`} />
+                  <span className="flex-1 text-left uppercase tracking-wider">
+                    {tab === "All" ? "All Rarities" : tab}
+                  </span>
+                  <span className="text-[10px] text-gray-600 font-bold">{count}</span>
+                  {active && <Check size={12} className="text-monad-400" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Content */}
