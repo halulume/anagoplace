@@ -13,11 +13,12 @@ const nextConfig = {
       { protocol: "https", hostname: "coin-images.coingecko.com" },
       { protocol: "https", hostname: "assets.geckoterminal.com" },
       { protocol: "https", hostname: "assets.relay.link" },
-      // OpenSea collection artwork hosts
-      { protocol: "https", hostname: "i.seadn.io" },
-      { protocol: "https", hostname: "raw.seadn.io" },
+      // OpenSea collection artwork hosts (all seadn.io subdomains)
+      { protocol: "https", hostname: "**.seadn.io" },
+      { protocol: "https", hostname: "seadn.io" },
       { protocol: "https", hostname: "openseauserdata.com" },
       { protocol: "https", hostname: "storage.opensea.io" },
+      { protocol: "https", hostname: "imagedelivery.net" },
     ],
   },
 
@@ -52,11 +53,12 @@ const nextConfig = {
         "https://coin-images.coingecko.com",
         "https://assets.geckoterminal.com",
         "https://assets.relay.link",
-        // OpenSea image CDNs
-        "https://i.seadn.io",
-        "https://raw.seadn.io",
+        // OpenSea image CDNs (all seadn.io subdomains: i, i2c, raw, etc.)
+        "https://*.seadn.io",
+        "https://seadn.io",
         "https://openseauserdata.com",
         "https://storage.opensea.io",
+        "https://imagedelivery.net",
       ].join(" "),
       [
         "connect-src 'self'",
